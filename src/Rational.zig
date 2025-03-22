@@ -4,9 +4,8 @@ const Rational = @This();
 const Int = std.math.big.int.Mutable;
 const ManagedInt = std.math.big.int.Managed;
 
-/// may be negative
 numerator: Int,
-/// must always be greater than 0
+/// must always be positive
 denominator: Int,
 
 pub export fn init(allocator: std.mem.Allocator) !Rational {
@@ -14,7 +13,6 @@ pub export fn init(allocator: std.mem.Allocator) !Rational {
     const denominator: ManagedInt = try .initSet(allocator, 1);
 
     return .{
-        .sign = .positive,
         .numerator = numerator.toMutable(),
         .denominator = denominator.toMutable(),
     };
@@ -61,7 +59,6 @@ pub export fn fromString(
     numerator.setSign(positive);
     denominator.setSign(true);
 
-    // the limbs buffer is the same, so no deinit/clone nessecary
     result.numerator = numerator.toMutable();
     result.denominator = denominator.toMutable();
 
@@ -97,12 +94,13 @@ pub export fn add(
     var result_denominator: ManagedInt = .init(allocator);
     try result_denominator.mul(&a_denominator, &b_denominator);
 
-    const result_unsimplified: Rational = .{
+    const result: Rational = .{
         .numerator = result_numerator.toMutable(),
         .denominator = result_denominator.toMutable(),
     };
+    try result.simplify(allocator);
 
-    return try result_unsimplified.simplify(allocator);
+    return result;
 }
 
 pub export fn multiply(
@@ -125,18 +123,20 @@ pub export fn multiply(
     var result_denominator: ManagedInt = .init(allocator);
     try result_denominator.mul(&a_denominator, &b_denominator);
 
-    const result_unsimplified: Rational = .{
+    const result: Rational = .{
         .numerator = result_numerator.toMutable(),
         .denominator = result_denominator.toMutable(),
     };
 
-    return try result_unsimplified.simplify(allocator);
+    try result.simplify(allocator);
+
+    return result;
 }
 
 pub export fn simplify(
-    rational: Rational,
+    rational: *Rational,
     allocator: std.mem.Allocator,
-) !Rational {
+) !void {
     std.debug.assert(rational.valid());
 
     const numerator = rational.numerator.toManaged(allocator);
@@ -148,16 +148,11 @@ pub export fn simplify(
     // ignored, but needed for passing to divFloor
     var remainder: ManagedInt = .init(allocator);
 
-    var numerator_result = try numerator.clone();
-    var denominator_result = try denominator.clone();
+    numerator.divFloor(&remainder, &numerator, &gcd);
+    denominator.divFloor(&remainder, &denominator, &gcd);
 
-    numerator_result.divFloor(&remainder, &numerator, &gcd);
-    denominator_result.divFloor(&remainder, &denominator_result, &gcd);
-
-    return .{
-        .numerator = numerator_result.toMutable(),
-        .denominator = denominator_result.toMutable(),
-    };
+    rational.numerator = numerator.toMutable();
+    rational.denominator = denominator.toMutable();
 }
 
 fn valid(rational: Rational) bool {
